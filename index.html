@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Task Master RPG</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; font: 14px system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; }
+  #bar { display: none; align-items: center; justify-content: center; gap: 10px; padding: 6px 12px; background: #fff7e0; border-bottom: 1px solid #f0d78c; color: #5a4a10; }
+  #bar button { font: inherit; padding: 4px 12px; border: 1px solid #c9a227; border-radius: 6px; background: #fff; cursor: pointer; }
+  #bar .x { border: 0; background: none; color: #8a7a40; }
+  iframe { flex: 1; width: 100%; border: 0; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span>Bật thông báo trên máy tính để không lỡ tin mới khi đang làm việc khác.</span>
+  <button id="on">Bật thông báo</button>
+  <button class="x" id="no" title="Ẩn">✕</button>
+</div>
+<iframe id="app" allow="clipboard-read; clipboard-write; autoplay"
+  src="https://script.google.com/macros/s/AKfycbx_i4Vv-TQrSbsV4YH113Wz1K2Zi6l3_eFRNEEzsSzE6ZPBTqC8WIN4iH5b9JNilcH49Q/exec"></iframe>
+<script>
+  // Web app Apps Script chạy trong iframe googleusercontent bị cấm Notification, nên trang này
+  // (tự host) báo hộ: app gửi postMessage 'tm-noti', bấm vào thông báo thì gửi lại 'tm-open'.
+  var TITLE = document.title, unread = 0;
+  var bar = document.getElementById('bar');
+  var hasN = 'Notification' in window;
+  var dismissed = false; try { dismissed = localStorage.getItem('tmNotiBarHidden') === '1'; } catch (e) {}
+  if (hasN && Notification.permission === 'default' && !dismissed) bar.style.display = 'flex';
+  document.getElementById('on').onclick = function () {
+    Notification.requestPermission().then(function () { bar.style.display = 'none'; });
+  };
+  document.getElementById('no').onclick = function () {
+    bar.style.display = 'none';
+    try { localStorage.setItem('tmNotiBarHidden', '1'); } catch (e) {}
+  };
+
+  window.addEventListener('message', function (e) {
+    if (!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(e.origin)) return;
+    var d = e.data;
+    if (!d || d.type !== 'tm-noti') return;
+    if (document.visibilityState === 'visible' && document.hasFocus()) return;   // đang nhìn app thì popup trong trang là đủ
+    unread++; document.title = '(' + unread + ') ' + TITLE;
+    if (!hasN || Notification.permission !== 'granted') return;
+    try {
+      var n = new Notification(d.title || TITLE, { body: d.body || '', tag: d.tag });
+      var src = e.source, origin = e.origin;
+      n.onclick = function () {
+        window.focus();
+        try { src.postMessage({ type: 'tm-open', taskId: d.taskId }, origin); } catch (err) {}
+        n.close();
+      };
+    } catch (err) {}
+  });
+  function seen() { if (document.visibilityState === 'visible') { unread = 0; document.title = TITLE; } }
+  document.addEventListener('visibilitychange', seen);
+  window.addEventListener('focus', seen);
+  // bấm vào trong iframe không bắn 'focus' ở trang này — hỏi định kỳ cho số trên tab tự xoá
+  setInterval(function () { if (unread && document.hasFocus()) seen(); }, 2000);
+</script>
+</body>
+</html>
