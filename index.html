@@ -45,7 +45,7 @@
     unread++; document.title = '(' + unread + ') ' + TITLE;
     if (!hasN || Notification.permission !== 'granted') return;
     try {
-      var n = new Notification(d.title || TITLE, { body: d.body || '', tag: d.tag });
+      var n = new Notification(d.title || TITLE, { body: d.body || '', icon: d.icon || undefined, tag: d.tag });
       var src = e.source, origin = e.origin;
       n.onclick = function () {
         window.focus();
