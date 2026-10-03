@@ -43,6 +43,7 @@
   window.addEventListener('message', function (e) {
     if (!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(e.origin)) return;
     var d = e.data;
+    if (d && d.type === 'tm-hello') { appWin = e.source; appOrigin = e.origin; return; }
     if (!d || d.type !== 'tm-noti') return;
     if (document.visibilityState === 'visible' && document.hasFocus()) return;   // đang nhìn app thì popup trong trang là đủ
     unread++; document.title = '(' + unread + ') ' + TITLE;
@@ -57,6 +58,17 @@
       };
     } catch (err) {}
   });
+  // Tab ẩn thì Chrome hãm setInterval của app (>5 phút ẩn còn ~1 phút/lần) -> thông báo trễ. Bộ đếm trong
+  // Web Worker không bị hãm: cứ 10s, nếu tab đang ẩn thì nhắc app hỏi tin mới ('tm-tick').
+  // Khung app lồng 2 tầng iframe nên phải chờ app tự gửi 'tm-hello' mới biết gửi về đâu.
+  var appWin = null, appOrigin = null;
+  try {
+    var wk = new Worker(URL.createObjectURL(new Blob(['setInterval(function(){postMessage(1)},10000)'], { type: 'text/javascript' })));
+    wk.onmessage = function () {
+      if (!appWin || document.visibilityState === 'visible') return;
+      try { appWin.postMessage({ type: 'tm-tick' }, appOrigin); } catch (err) {}
+    };
+  } catch (err) {}
   function seen() { if (document.visibilityState === 'visible') { unread = 0; document.title = TITLE; } }
   document.addEventListener('visibilitychange', seen);
   window.addEventListener('focus', seen);
