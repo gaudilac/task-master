@@ -7,6 +7,7 @@
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="icon" href="favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,800&family=JetBrains+Mono:wght@700&display=swap">
 <style>
   html, body { margin: 0; height: 100%; background: #fff; font: 14px system-ui, sans-serif; }
   body { display: flex; flex-direction: column; }
@@ -14,15 +15,42 @@
   #bar button { font: inherit; padding: 4px 12px; border: 1px solid #c9a227; border-radius: 6px; background: #fff; cursor: pointer; }
   #bar .x { border: 0; background: none; color: #8a7a40; }
   iframe { flex: 1; width: 100%; border: 0; }
+  /* Màn chờ (@462): Google mất ~10s chuyển hướng + dịch JSX trước khi app vẽ được gì. Logo tự vẽ theo chặng thật:
+     khung = chờ iframe load, dấu tích = chờ 'tm-boot' (React dựng xong), thanh xanh = chờ 'tm-ready' (hết isLoading). */
+  #splash { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; background: #F4F2ED; color: #16161A; transition: opacity .45s ease, transform .45s ease; }
+  #splash.out { opacity: 0; transform: scale(1.015); pointer-events: none; }
+  .sp-box { display: grid; justify-items: center; gap: 14px; }
+  .sp-logo { width: 112px; height: 112px; overflow: visible; }
+  .sp-logo rect, .sp-logo polyline { fill: none; stroke: url(#spg); }
+  .sp-logo rect { stroke-width: 34; stroke-dasharray: 1064; stroke-dashoffset: 1064; }
+  .sp-logo polyline { stroke-width: 44; stroke-dasharray: 204; stroke-dashoffset: 204; stroke-linejoin: miter; }
+  .sp-logo.pulse { animation: sp-breathe 1.6s ease-in-out infinite; }
+  @keyframes sp-breathe { 50% { transform: scale(1.05); } }
+  .sp-name { font: 800 20px/1 'Bricolage Grotesque', system-ui, sans-serif; letter-spacing: -.02em; }
+  .sp-track { width: 128px; height: 2px; background: #E2DFD8; overflow: hidden; }
+  .sp-track i { display: block; height: 100%; background: linear-gradient(90deg, #0BD43C, #0FAE86); transform-origin: left; transform: scaleX(0); }
+  .sp-lbl { font: 700 10px 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase; color: #6B6B75; min-height: 1em; }
+  .sp-slow { display: none; font-size: 13px; color: #4A4A52; }
+  .sp-slow button { font: inherit; padding: 0 2px; border: 0; background: none; color: #16161A; font-weight: 600; text-decoration: underline; cursor: pointer; }
+  @media (prefers-reduced-motion: reduce) { .sp-logo.pulse { animation: none; } #splash { transition: opacity .2s; } }
 </style>
 </head>
 <body>
+<div id="splash" role="status" aria-label="Đang tải Task Master">
+  <div class="sp-box">
+    <svg class="sp-logo" id="spLogo" viewBox="0 0 512 512" aria-hidden="true"><defs><linearGradient id="spg" x1="0" x2="1"><stop offset="0" stop-color="#0BD43C"/><stop offset="1" stop-color="#0FAE86"/></linearGradient></defs><rect id="spBx" x="110" y="136" width="292" height="240"/><polyline id="spCk" points="186,256 234,304 330,208"/></svg>
+    <div class="sp-name">Task Master</div>
+    <div class="sp-track"><i id="spTr"></i></div>
+    <div class="sp-lbl" id="spLbl">Đang kết nối máy chủ</div>
+    <div class="sp-slow" id="spSlow">Mạng chậm hơn thường lệ · <button id="spRe">Tải lại</button></div>
+  </div>
+</div>
 <div id="bar">
   <span>Bật thông báo trên máy tính để không lỡ tin mới khi đang làm việc khác.</span>
   <button id="on">Bật thông báo</button>
   <button class="x" id="no" title="Ẩn">✕</button>
 </div>
-<iframe id="app" allow="clipboard-read; clipboard-write; autoplay"
+<iframe id="app" onload="window.spLoad && spLoad()" allow="clipboard-read; clipboard-write; autoplay"
   src="https://script.google.com/macros/s/AKfycbx_i4Vv-TQrSbsV4YH113Wz1K2Zi6l3_eFRNEEzsSzE6ZPBTqC8WIN4iH5b9JNilcH49Q/exec"></iframe>
 <script>
   // Web app Apps Script chạy trong iframe googleusercontent bị cấm Notification, nên trang này
@@ -74,6 +102,41 @@
   window.addEventListener('focus', seen);
   // bấm vào trong iframe không bắn 'focus' ở trang này — hỏi định kỳ cho số trên tab tự xoá
   setInterval(function () { if (unread && document.hasFocus()) seen(); }, 2000);
+</script>
+<script>
+  // Màn chờ: chặng chỉ tiến (boot có thể tới trước load). Trong chặng thanh bò chậm dần tới ~90%, đủ khi sự kiện thật tới.
+  (function () {
+    var EXP = [5, 5.5, 6.5], LBL = ['Đang kết nối máy chủ', 'Đang dựng giao diện', 'Đang nạp dữ liệu'];
+    var sp = document.getElementById('splash'), logo = document.getElementById('spLogo');
+    var bx = document.getElementById('spBx'), ck = document.getElementById('spCk'), tr = document.getElementById('spTr'), lbl = document.getElementById('spLbl');
+    var stage = 0, since = Date.now(), done = false, loadT = 0;
+    function prog(i) { return i < stage ? 1 : i > stage ? 0 : 0.9 * (1 - Math.exp(-2.2 * (Date.now() - since) / 1000 / EXP[i])); }
+    function go(n) { if (done || n <= stage) return; stage = n; since = Date.now(); if (n < 3) lbl.textContent = LBL[n]; logo.classList.toggle('pulse', n === 2); }
+    function frame() {
+      bx.style.strokeDashoffset = 1064 * (1 - prog(0)); ck.style.strokeDashoffset = 204 * (1 - prog(1)); tr.style.transform = 'scaleX(' + prog(2) + ')';
+      if (!done) requestAnimationFrame(frame);
+    }
+    function finish() {
+      if (done) return; stage = 3; frame(); done = true;
+      setTimeout(function () { sp.classList.add('out'); setTimeout(function () { sp.remove(); }, 500); }, 250);
+    }
+    window.spLoad = function () { loadT = Date.now(); go(1); };
+    window.addEventListener('message', function (e) {
+      if (!/^https:\/\/[a-z0-9-]+\.googleusercontent\.com$/.test(e.origin) || !e.data) return;
+      if (e.data.type === 'tm-boot') go(2);
+      else if (e.data.type === 'tm-ready') finish();
+    });
+    // Lưới an toàn: trang lỗi của Google/bản app cũ không gửi 'tm-boot' -> tự tắt sau 20s; app đã dựng mà 30s chưa nạp xong ->
+    // tắt luôn (app còn màn "Đang tải" riêng); Google chuyển hướng quá 30s -> mời tải lại
+    setInterval(function () {
+      if (done) return;
+      if (stage === 1 && loadT && Date.now() - loadT > 20000) finish();
+      if (stage === 2 && Date.now() - since > 30000) finish();
+      if (stage === 0 && Date.now() - since > 30000) document.getElementById('spSlow').style.display = 'block';
+    }, 1000);
+    document.getElementById('spRe').onclick = function () { location.reload(); };
+    requestAnimationFrame(frame);
+  })();
 </script>
 </body>
 </html>
